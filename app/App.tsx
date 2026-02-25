@@ -96,6 +96,290 @@ const fmtTime = (ts: number) =>
 
 const minutesSince = (ts: number) => Math.max(0, Math.round((now() - ts) / 60000));
 
+function LoginCard({
+  defaultName,
+  defaultRole,
+  onLogin,
+  logoSrc,
+}: {
+  defaultName: string;
+  defaultRole: "OPERADOR" | "SUPERVISOR" | "COORDINADOR";
+  onLogin: (name: string, role: "OPERADOR" | "SUPERVISOR" | "COORDINADOR") => void;
+  logoSrc?: string;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [role, setRole] = useState(defaultRole);
+
+  const can = name.trim().length >= 3;
+
+  return (
+    <Card className="w-full max-w-md rounded-2xl">
+      <CardHeader className="space-y-2">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 rounded-2xl border bg-muted flex items-center justify-center overflow-hidden">
+            {logoSrc ? (
+              <img src={logoSrc} alt="Arbiol" className="h-10 w-10 object-contain" />
+            ) : (
+              <ShieldCheck className="h-6 w-6" />
+            )}
+          </div>
+          <div>
+            <CardTitle>Arbiol Visión AI</CardTitle>
+            <div className="text-xs text-muted-foreground">AVAI-CAD • Demo</div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div>
+          <Label className="text-xs">Nombre</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Roberto / Operador 01" />
+        </div>
+
+        <div>
+          <Label className="text-xs">Rol</Label>
+          <Select value={role} onValueChange={(v) => setRole(v as any)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="OPERADOR">Operador</SelectItem>
+              <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
+              <SelectItem value="COORDINADOR">Coordinador</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Button className="w-full" disabled={!can} onClick={() => onLogin(name.trim(), role)}>
+          Entrar
+        </Button>
+
+        <div className="text-xs text-muted-foreground">
+          Demo sin backend: la sesión es local. En piloto real va con SSO/RBAC/bitácora.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function DispatchPanel({
+  incidents,
+  units,
+  selectedId,
+  onSelect,
+  onAssign,
+  onUnitStatus,
+}: {
+  incidents: Incident[];
+  units: Unit[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+  onAssign: (incidentId: string, unitId: string) => void;
+  onUnitStatus: (unitId: string, status: UnitStatus) => void;
+}) {
+  const queue = useMemo(() => {
+    const sevRank: Record<Severity, number> = { CRITICO: 4, ALTO: 3, MEDIO: 2, BAJO: 1 };
+    return incidents
+      .filter((i) => i.status !== "CERRADO")
+      .slice()
+      .sort((a, b) => {
+        const r = sevRank[b.severity] - sevRank[a.severity];
+        if (r !== 0) return r;
+        return minutesSince(b.createdAt) - minutesSince(a.createdAt);
+      });
+  }, [incidents]);
+
+  const available = units.filter((u) => u.status === "DISPONIBLE");
+
+  const selected = incidents.find((i) => i.id === selectedId) ?? queue[0];
+
+  const etaFor = (unitId: string, incidentId: string) => {
+    // ETA demo: mismo sector => 4-7min; diferente => 8-14min
+    const u = units.find((x) => x.id === unitId);
+    const inc = incidents.find((x) => x.id === incidentId);
+    if (!u || !inc) return 0;
+    const same = u.sector === inc.sector;
+    const base = same ? 4 : 8;
+    const jitter = (unitId.length * 3 + incidentId.length) % (same ? 4 : 7);
+    return base + jitter;
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Cola de despacho</div>
+          <Badge variant="secondary">{queue.length} activos</Badge>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {queue.map((i) => {
+            const isSel = selected?.id === i.id;
+            const mins = minutesSince(i.createdAt);
+            const slaLeft = Math.max(0, i.slaMin - mins);
+            return (
+              <button
+                key={i.id}
+                onClick={() => onSelect(i.id)}
+                className={
+                  "w-full text-left rounded-2xl border p-3 transition " +
+                  (isSel ? "border-blue-600 bg-blue-600/5" : "hover:bg-muted")
+                }
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-xs text-muted-foreground">{i.folio}</div>
+                    <div className="font-medium">{i.title}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {i.sector} • {i.type}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={"px-2 py-0.5 rounded-full text-[10px] text-white inline-block " + sevColor(i.severity)}>{i.severity}</div>
+                    <div className={"mt-1 text-[10px] " + (slaLeft <= 3 ? "text-red-600" : "text-muted-foreground")}>
+                      SLA {slaLeft}m
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+          {queue.length === 0 && <div className="text-sm text-muted-foreground">Sin incidentes activos.</div>}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Asignación rápida</div>
+          <Badge variant="secondary">{available.length} disponibles</Badge>
+        </div>
+
+        {!selected ? (
+          <div className="mt-3 text-sm text-muted-foreground">Selecciona un incidente.</div>
+        ) : (
+          <div className="mt-3 space-y-2">
+            <div className="rounded-xl border p-3">
+              <div className="text-sm font-medium">{selected.folio} • {selected.sector}</div>
+              <div className="text-xs text-muted-foreground">{selected.location}</div>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-2">
+              {available.slice(0, 6).map((u) => (
+                <div key={u.id} className="rounded-xl border p-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold">{u.callsign}</div>
+                    <div className="text-xs text-muted-foreground">{u.agency} • {u.sector}</div>
+                    <div className="text-xs text-muted-foreground">ETA: {etaFor(u.id, selected.id)} min</div>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onAssign(selected.id, u.id);
+                      onUnitStatus(u.id, "ASIGNADA");
+                    }}
+                  >
+                    Asignar
+                  </Button>
+                </div>
+              ))}
+              {available.length === 0 && (
+                <div className="text-sm text-muted-foreground">No hay unidades disponibles.</div>
+              )}
+            </div>
+
+            <div className="text-xs text-muted-foreground">
+              En producto: AVL real, cálculo ETA, cobertura por cuadrante, y reglas por prioridad.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+
+function MapMock({ incident, units }: { incident?: Incident; units: Unit[] }) {
+  // Coordenadas demo normalizadas 0..100 (para pintar en un contenedor)
+  const incidentPt = useMemo(() => {
+    if (!incident) return { x: 55, y: 45 };
+    const seed = incident.id.length * 17 + incident.sector.length * 13;
+    return { x: 30 + (seed % 50), y: 25 + ((seed * 3) % 50) };
+  }, [incident]);
+
+  const unitPts = useMemo(() => {
+    return units.map((u, idx) => {
+      const seed = (u.id.length + idx) * 19 + u.sector.length * 7;
+      return {
+        id: u.id,
+        callsign: u.callsign,
+        status: u.status,
+        x: 10 + (seed % 80),
+        y: 10 + ((seed * 5) % 80),
+      };
+    });
+  }, [units]);
+
+  return (
+    <div className="rounded-2xl border bg-muted/30 p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-semibold">Mapa operativo (mock)</div>
+          <div className="text-xs text-muted-foreground">
+            Cuadrantes • Unidades • Incidente seleccionado
+          </div>
+        </div>
+        <Badge variant="secondary">Demo</Badge>
+      </div>
+
+      <div className="mt-3 relative h-[320px] rounded-2xl border bg-background overflow-hidden">
+        {/* Grid */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.18) 1px, transparent 1px)",
+            backgroundSize: "40px 40px",
+          }}
+        />
+
+        {/* Incident marker */}
+        <div
+          className="absolute"
+          style={{ left: `${incidentPt.x}%`, top: `${incidentPt.y}%`, transform: "translate(-50%, -50%)" }}
+          title={incident ? `${incident.folio} • ${incident.title}` : "Incidente"}
+        >
+          <div className="h-4 w-4 rounded-full bg-red-600 ring-4 ring-red-600/20" />
+        </div>
+
+        {/* Units */}
+        {unitPts.map((p) => (
+          <div
+            key={p.id}
+            className="absolute"
+            style={{ left: `${p.x}%`, top: `${p.y}%`, transform: "translate(-50%, -50%)" }}
+            title={`${p.callsign} • ${p.status}`}
+          >
+            <div className="h-3.5 w-3.5 rounded-full bg-blue-600 ring-4 ring-blue-600/15" />
+          </div>
+        ))}
+
+        {/* Legend */}
+        <div className="absolute left-3 bottom-3 rounded-xl border bg-background/90 backdrop-blur px-3 py-2 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" /> Incidente
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" /> Unidades
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
 function pseudoHash(name: string, ts: number) {
   // hash demo (NO criptográfico)
   const base = `${name}|${ts}|${name.length}`;
@@ -420,83 +704,108 @@ function OpsScreen({
             <MapIcon className="h-5 w-5" /> Mapa operativo
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-2xl border bg-muted/40 p-4">
-            <div className="flex items-center justify-between">
+        
+<CardContent className="space-y-3">
+  <Tabs defaultValue="map" className="w-full">
+    <TabsList className="grid w-full grid-cols-2">
+      <TabsTrigger value="map">Mapa</TabsTrigger>
+      <TabsTrigger value="dispatch">Despacho</TabsTrigger>
+    </TabsList>
+
+    <TabsContent value="map" className="space-y-3">
+
+      {/* MAPA */}
+      <div className="rounded-2xl border bg-muted/40 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold">
+              {selected?.sector} — {selected?.location}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              (Mock) Aquí irá mapa real con AVL + cuadrantes.
+            </div>
+          </div>
+          <Badge variant="secondary">Demo</Badge>
+        </div>
+      </div>
+
+      {/* Acciones rápidas */}
+      <div className="rounded-2xl border p-4 space-y-3">
+        <div className="text-sm font-semibold">Acciones rápidas</div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => selected && onIncidentStatus(selected.id, "CLASIFICADO", "Supervisor")}
+          >
+            Clasificar
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => selected && onIncidentStatus(selected.id, "EN_CAMINO", "Despacho")}
+          >
+            En camino
+          </Button>
+
+          <Button
+            variant="secondary"
+            onClick={() => selected && onIncidentStatus(selected.id, "EN_SITIO", "Unidad")}
+          >
+            En sitio
+          </Button>
+
+          <Button
+            onClick={() => selected && onIncidentStatus(selected.id, "CERRADO", "Supervisor")}
+          >
+            Cerrar
+          </Button>
+        </div>
+      </div>
+
+    </TabsContent>
+
+    <TabsContent value="dispatch">
+
+      {/* PANEL DE DESPACHO */}
+      <div className="rounded-2xl border p-4 space-y-3">
+        <div className="text-sm font-semibold">Cola de despacho</div>
+
+        {incidents
+          .filter((i) => i.status !== "CERRADO")
+          .map((i) => (
+            <div
+              key={i.id}
+              className="rounded-xl border p-3 flex items-center justify-between"
+            >
               <div>
-                <div className="text-sm font-semibold">{selected?.sector} — {selected?.location}</div>
-                <div className="text-xs text-muted-foreground">(Placeholder) Aquí va mapa: cuadrantes, cámaras, unidades AVL.</div>
-              </div>
-              <Badge variant="secondary">Demo</Badge>
-            </div>
-            <Separator className="my-3" />
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-xl bg-background p-3 border">
-                <div className="text-muted-foreground">Cámaras cercanas</div>
-                <div className="mt-1 font-semibold">8</div>
-              </div>
-              <div className="rounded-xl bg-background p-3 border">
-                <div className="text-muted-foreground">Unidades cercanas</div>
-                <div className="mt-1 font-semibold">3</div>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Acciones rápidas</div>
-              <div className="text-xs text-muted-foreground">Bitácora automática</div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="secondary"
-                onClick={() => selected && onIncidentStatus(selected.id, "CLASIFICADO", "Supervisor")}
-                disabled={!selected || selected.status === "CERRADO"}
-              >
-                Clasificar
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => selected && onIncidentStatus(selected.id, "EN_CAMINO", "Despacho")}
-                disabled={!selected || !selected.assignedUnitId || selected.status === "CERRADO"}
-              >
-                En camino
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => selected && onIncidentStatus(selected.id, "EN_SITIO", "Unidad")}
-                disabled={!selected || selected.status === "CERRADO"}
-              >
-                En sitio
-              </Button>
-              <Button
-                onClick={() => selected && onIncidentStatus(selected.id, "CERRADO", "Supervisor")}
-                disabled={!selected || selected.status === "CERRADO"}
-              >
-                Cerrar
-              </Button>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border p-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Evidencia (demo)</div>
-              <AddEvidenceDialog onAdd={(name, type) => selected && onAddEvidence(selected.id, name, type)} disabled={!selected || selected.status === "CERRADO"} />
-            </div>
-            <div className="mt-3 space-y-2">
-              {incidentEvidences.map((e) => (
-                <div key={e.id} className="flex items-center justify-between rounded-xl border p-3">
-                  <div>
-                    <div className="text-sm font-medium">{e.name}</div>
-                    <div className="text-xs text-muted-foreground">{e.type} • Hash {e.hash.slice(0, 12)}… • {fmtTime(e.createdAt)}</div>
-                  </div>
-                  <Badge variant="secondary">Custodia</Badge>
+                <div className="text-sm font-medium">{i.folio}</div>
+                <div className="text-xs text-muted-foreground">
+                  {i.sector} • {i.severity}
                 </div>
-              ))}
-              {incidentEvidences.length === 0 && <div className="text-sm text-muted-foreground">Sin evidencias anexadas.</div>}
+              </div>
+
+              <Button
+                size="sm"
+                onClick={() => {
+                  const unit = units.find((u) => u.status === "DISPONIBLE");
+                  if (unit) {
+                    onAssign(i.id, unit.id);
+                    onUnitStatus(unit.id, "ASIGNADA");
+                  }
+                }}
+              >
+                Asignar
+              </Button>
             </div>
-          </div>
-        </CardContent>
+          ))}
+      </div>
+
+    </TabsContent>
+  </Tabs>
+</CardContent>
+
+
       </Card>
 
       {/* Right: Detail + Units + Timeline */}
@@ -981,6 +1290,11 @@ function AdminScreen() {
 
 // ------------------------- App Root -------------------------
 export default function App() {
+  const [isAuthed, setIsAuthed] = useState(false);
+  const [operatorName, setOperatorName] = useState("Operador demo");
+  const [role, setRole] = useState<"OPERADOR" | "SUPERVISOR" | "COORDINADOR">("OPERADOR");
+  const logoSrc = "/arbiol-logo.png";
+
   const [route, setRoute] = useState<"ops" | "analytics" | "evidence" | "admin">("ops");
 
   const [incidents, setIncidents] = useState<Incident[]>(seedIncidents);
@@ -1075,6 +1389,23 @@ export default function App() {
   };
 
   const title = route === "ops" ? "Operación" : route === "analytics" ? "Analítica" : route === "evidence" ? "Evidencias" : "Administración";
+
+if (!isAuthed) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <LoginCard
+        defaultName={operatorName}
+        defaultRole={role}
+        logoSrc={logoSrc}
+        onLogin={(name, r) => {
+          setOperatorName(name);
+          setRole(r);
+          setIsAuthed(true);
+        }}
+      />
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen flex">
