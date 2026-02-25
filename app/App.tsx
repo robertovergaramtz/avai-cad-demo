@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,10 +102,12 @@ function LoginCard({
   defaultName,
   defaultRole,
   onLogin,
+  logoSrc,
 }: {
   defaultName: string;
   defaultRole: Role;
   onLogin: (name: string, role: Role) => void;
+  logoSrc?: string;
 }) {
   const [name, setName] = useState(defaultName);
   const [role, setRole] = useState<Role>(defaultRole);
@@ -117,7 +119,7 @@ function LoginCard({
       <CardHeader className="space-y-2">
         <div className="flex items-center gap-3">
           <div className="h-12 w-12 rounded-2xl overflow-hidden border bg-muted flex items-center justify-center">
-            <img src="/arbiol-logo.png" alt="Arbiol" className="h-12 w-12 object-contain" />
+            <img src={logoSrc ?? "/arbiol-logo.png"} alt="Arbiol" className="h-12 w-12 object-contain" />
           </div>
           <div>
             <CardTitle>AVAI-CAD</CardTitle>
