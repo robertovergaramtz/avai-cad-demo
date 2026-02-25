@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -416,6 +416,28 @@ function statusBadge(status: IncidentStatus) {
   return <Badge variant={status === "CERRADO" ? "secondary" : "default"}>{map[status].label}</Badge>;
 }
 
+
+type CloseCheck = { ok: boolean; reason?: string };
+
+function canCloseIncident(incident: Incident, role: Role, evidences: Evidence[]): CloseCheck {
+  if (role === "ADMIN_TI") return { ok: false, reason: "Rol ADMIN_TI no opera incidentes." };
+
+  const hasEvidence = evidences.some((e) => e.incidentId === incident.id);
+
+  // Regla: CRÍTICO requiere evidencia
+  if (incident.severity === "CRITICO" && !hasEvidence) {
+    return { ok: false, reason: "Incidente CRÍTICO requiere evidencia para cierre." };
+  }
+
+  // RBAC: Operador no cierra CRÍTICOS (aun con evidencia)
+  if (role === "OPERADOR" && incident.severity === "CRITICO") {
+    return { ok: false, reason: "Operador no puede cerrar incidentes CRÍTICOS." };
+  }
+
+  return { ok: true };
+}
+
+
 // ------------------------- Datos iniciales -------------------------
 const INCIDENT_TYPES = [
   "Robo a comercio",
@@ -511,12 +533,15 @@ function Sidebar({
   role: Role;
   onLogout: () => void;
 }) {
-  const items = [
+  const baseItems = [
     { k: "ops", label: "Operación", icon: Siren },
     { k: "analytics", label: "Analítica", icon: LayoutDashboard },
     { k: "evidence", label: "Evidencias", icon: FileLock2 },
     { k: "admin", label: "Administración", icon: Settings },
   ];
+
+  // RBAC navegación: ADMIN_TI solo ve Administración
+  const items = role === "ADMIN_TI" ? baseItems.filter((i) => i.k === "admin") : baseItems;
 
   return (
     <div className="w-64 shrink-0 border-r bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/40">
@@ -582,6 +607,8 @@ function OpsScreen({
   units,
   timeline,
   evidences,
+  operatorName,
+  role,
   onCreateIncident,
   onSelect,
   selectedId,
@@ -594,6 +621,8 @@ function OpsScreen({
   units: Unit[];
   timeline: Record<string, TimelineEvent[]>;
   evidences: Evidence[];
+  operatorName: string;
+  role: Role;
   onCreateIncident: (i: Omit<Incident, "id" | "folio" | "createdAt" | "status">) => void;
   onSelect: (id: string) => void;
   selectedId?: string;
@@ -623,6 +652,8 @@ function OpsScreen({
 
   const unitOptions = units.filter((u) => u.status === "DISPONIBLE" || u.status === "NO_DISPONIBLE");
   const incidentEvidences = evidences.filter((e) => e.incidentId === selected?.id);
+
+  const closeCheck = selected ? canCloseIncident(selected, role, evidences) : { ok: false, reason: "Sin incidente seleccionado." };
 
   return (
     <div className="p-6 grid grid-cols-12 gap-4">
@@ -1302,32 +1333,116 @@ function AdminScreen() {
 
 // ------------------------- App Root -------------------------
 export default function App() {
-  const [isAuthed, setIsAuthed] = useState(false);
-  const [operatorName, setOperatorName] = useState("Operador demo");
-  const [role, setRole] = useState<Role>("OPERADOR");
+  const [isAuthed, setIsAuthed] = useState(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("avai_cad_state_v1") : null;
+    if (!raw) return false;
+    try { return Boolean(JSON.parse(raw).isAuthed) || false; } catch { return false; }
+  });
+  const [operatorName, setOperatorName] = useState(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("avai_cad_state_v1") : null;
+    if (!raw) return "Operador demo";
+    try { return JSON.parse(raw).operatorName ?? "Operador demo"; } catch { return "Operador demo"; }
+  });
+  const [role, setRole] = useState<Role>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem("avai_cad_state_v1") : null;
+    if (!raw) return "OPERADOR";
+    try { return (JSON.parse(raw).role as Role) ?? "OPERADOR"; } catch { return "OPERADOR"; }
+  });
   const logoSrc = "/arbiol-logo.png";
 
   const [route, setRoute] = useState<"ops" | "analytics" | "evidence" | "admin">("ops");
 
-  const [incidents, setIncidents] = useState<Incident[]>(seedIncidents);
-  const [units, setUnits] = useState<Unit[]>(seedUnits);
-  const [timeline, setTimeline] = useState<Record<string, TimelineEvent[]>>(seedTimeline);
-  const [evidences, setEvidences] = useState<Evidence[]>(() => {
-    const t = now() - 12 * 60000;
-    return [
-      {
-        id: "ev_1",
-        incidentId: "inc_2",
-        name: "Foto preliminar (demo)",
-        type: "IMAGEN",
-        hash: pseudoHash("Foto preliminar", t),
-        createdAt: t,
-        createdBy: "Operador 02",
-      },
-    ];
+  const STORAGE_KEY = "avai_cad_state_v1";
+
+  const [incidents, setIncidents] = useState<Incident[]>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return seedIncidents();
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.incidents ?? seedIncidents();
+    } catch {
+      return seedIncidents();
+    }
   });
 
-  const [selectedId, setSelectedId] = useState<string | undefined>("inc_1");
+  const [units, setUnits] = useState<Unit[]>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return seedUnits();
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.units ?? seedUnits();
+    } catch {
+      return seedUnits();
+    }
+  });
+
+  const [timeline, setTimeline] = useState<Record<string, TimelineEvent[]>>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return seedTimeline();
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.timeline ?? seedTimeline();
+    } catch {
+      return seedTimeline();
+    }
+  });
+
+  const [evidences, setEvidences] = useState<Evidence[]>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) {
+      const t = now() - 12 * 60000;
+      return [
+        {
+          id: "ev_1",
+          incidentId: "inc_2",
+          name: "Foto preliminar (demo)",
+          type: "IMAGEN",
+          hash: pseudoHash("Foto preliminar", t),
+          createdAt: t,
+          createdBy: "Operador 02",
+        },
+      ];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.evidences ?? [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [selectedId, setSelectedId] = useState<string | undefined>(() => {
+    const raw = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
+    if (!raw) return "inc_1";
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed.selectedId ?? "inc_1";
+    } catch {
+      return "inc_1";
+    }
+  });
+
+
+  // Persistencia demo (localStorage) + RBAC navegación
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      incidents,
+      units,
+      timeline,
+      evidences,
+      selectedId,
+      operatorName,
+      role,
+      isAuthed,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }, [incidents, units, timeline, evidences, selectedId, operatorName, role]);
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (role === "ADMIN_TI" && route !== "admin") setRoute("admin");
+  }, [isAuthed, role, route]);
 
   // Timeline helper
   const pushEvent = (incidentId: string, actor: string, action: string, detail?: string) => {
@@ -1351,7 +1466,7 @@ export default function App() {
       ...data,
     };
     setIncidents((prev) => [inc, ...prev]);
-    pushEvent(id, "Operador demo", "Incidente creado", `Tipo: ${inc.type} | Sev: ${inc.severity}`);
+    pushEvent(id, operatorName, "Incidente creado", `Tipo: ${inc.type} | Sev: ${inc.severity}`);
     setSelectedId(id);
   };
 
@@ -1364,6 +1479,18 @@ export default function App() {
   };
 
   const onIncidentStatus = (incidentId: string, status: IncidentStatus, actor = "Sistema") => {
+    // RBAC/Reglas de cierre
+    if (status === "CERRADO") {
+      const inc = incidents.find((x) => x.id === incidentId);
+      if (inc) {
+        const chk = canCloseIncident(inc, role, evidences);
+        if (!chk.ok) {
+          pushEvent(incidentId, actor, "Cierre bloqueado", chk.reason ?? "No permitido");
+          return;
+        }
+      }
+    }
+
     setIncidents((prev) =>
       prev.map((i) => {
         if (i.id !== incidentId) return i;
@@ -1394,10 +1521,10 @@ export default function App() {
       type,
       hash: pseudoHash(name, ts),
       createdAt: ts,
-      createdBy: "Operador demo",
+      createdBy: operatorName,
     };
     setEvidences((prev) => [ev, ...prev]);
-    pushEvent(incidentId, "Operador demo", "Evidencia anexada", `${type}: ${name} | Hash ${ev.hash.slice(0, 12)}…`);
+    pushEvent(incidentId, operatorName, "Evidencia anexada", `${type}: ${name} | Hash ${ev.hash.slice(0, 12)}…`);
   };
 
   const title = route === "ops" ? "Operación" : route === "analytics" ? "Analítica" : route === "evidence" ? "Evidencias" : "Administración";
@@ -1464,6 +1591,8 @@ if (!isAuthed) {
             units={units}
             timeline={timeline}
             evidences={evidences}
+            operatorName={operatorName}
+            role={role}
             onCreateIncident={onCreateIncident}
             onSelect={setSelectedId}
             selectedId={selectedId}
