@@ -41,6 +41,7 @@ import {
 type Severity = "CRITICO" | "ALTO" | "MEDIO" | "BAJO";
 type IncidentStatus = "NUEVO" | "CLASIFICADO" | "ASIGNADO" | "EN_CAMINO" | "EN_SITIO" | "CERRADO";
 type UnitStatus = "DISPONIBLE" | "ASIGNADA" | "EN_CAMINO" | "EN_SITIO" | "NO_DISPONIBLE";
+type Role = "OPERADOR" | "SUPERVISOR" | "COORDINADOR" | "ADMIN_TI";
 
 type TimelineEvent = {
   id: string;
@@ -96,19 +97,18 @@ const fmtTime = (ts: number) =>
 
 const minutesSince = (ts: number) => Math.max(0, Math.round((now() - ts) / 60000));
 
+
 function LoginCard({
   defaultName,
   defaultRole,
   onLogin,
-  logoSrc,
 }: {
   defaultName: string;
-  defaultRole: "OPERADOR" | "SUPERVISOR" | "COORDINADOR";
-  onLogin: (name: string, role: "OPERADOR" | "SUPERVISOR" | "COORDINADOR") => void;
-  logoSrc?: string;
+  defaultRole: Role;
+  onLogin: (name: string, role: Role) => void;
 }) {
   const [name, setName] = useState(defaultName);
-  const [role, setRole] = useState(defaultRole);
+  const [role, setRole] = useState<Role>(defaultRole);
 
   const can = name.trim().length >= 3;
 
@@ -116,28 +116,25 @@ function LoginCard({
     <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="space-y-2">
         <div className="flex items-center gap-3">
-          <div className="h-12 w-12 rounded-2xl border bg-muted flex items-center justify-center overflow-hidden">
-            {logoSrc ? (
-              <img src={logoSrc} alt="Arbiol" className="h-10 w-10 object-contain" />
-            ) : (
-              <ShieldCheck className="h-6 w-6" />
-            )}
+          <div className="h-12 w-12 rounded-2xl overflow-hidden border bg-muted flex items-center justify-center">
+            <img src="/arbiol-logo.png" alt="Arbiol" className="h-12 w-12 object-contain" />
           </div>
           <div>
-            <CardTitle>Arbiol Visión AI</CardTitle>
-            <div className="text-xs text-muted-foreground">AVAI-CAD • Demo</div>
+            <CardTitle>AVAI-CAD</CardTitle>
+            <div className="text-xs text-muted-foreground">Arbiol Visión AI • Acceso</div>
           </div>
         </div>
       </CardHeader>
+
       <CardContent className="space-y-3">
         <div>
           <Label className="text-xs">Nombre</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Roberto / Operador 01" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Operador 07" />
         </div>
 
         <div>
           <Label className="text-xs">Rol</Label>
-          <Select value={role} onValueChange={(v) => setRole(v as any)}>
+          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
@@ -145,6 +142,7 @@ function LoginCard({
               <SelectItem value="OPERADOR">Operador</SelectItem>
               <SelectItem value="SUPERVISOR">Supervisor</SelectItem>
               <SelectItem value="COORDINADOR">Coordinador</SelectItem>
+              <SelectItem value="ADMIN_TI">Administrador (TI)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -154,7 +152,7 @@ function LoginCard({
         </Button>
 
         <div className="text-xs text-muted-foreground">
-          Demo sin backend: la sesión es local. En piloto real va con SSO/RBAC/bitácora.
+          Demo sin backend: la sesión es local. En piloto real se conecta a RBAC/SSO.
         </div>
       </CardContent>
     </Card>
@@ -498,7 +496,19 @@ const seedTimeline = (): Record<string, TimelineEvent[]> => {
 };
 
 // ------------------------- UI: Layout -------------------------
-function Sidebar({ active, onNavigate }: { active: string; onNavigate: (k: string) => void }) {
+function Sidebar({
+  active,
+  onNavigate,
+  operatorName,
+  role,
+  onLogout,
+}: {
+  active: string;
+  onNavigate: (k: string) => void;
+  operatorName: string;
+  role: Role;
+  onLogout: () => void;
+}) {
   const items = [
     { k: "ops", label: "Operación", icon: Siren },
     { k: "analytics", label: "Analítica", icon: LayoutDashboard },
@@ -542,9 +552,9 @@ function Sidebar({ active, onNavigate }: { active: string; onNavigate: (k: strin
       <div className="mt-auto p-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <UserCircle2 className="h-4 w-4" />
-          <span>Operador demo</span>
+          <span>{operatorName} • {role}</span>
         </div>
-        <Button variant="ghost" className="mt-2 w-full justify-start gap-2" disabled>
+        <Button variant="ghost" className="mt-2 w-full justify-start gap-2" onClick={onLogout}>
           <LogOut className="h-4 w-4" /> Salir
         </Button>
       </div>
@@ -1292,7 +1302,7 @@ function AdminScreen() {
 export default function App() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [operatorName, setOperatorName] = useState("Operador demo");
-  const [role, setRole] = useState<"OPERADOR" | "SUPERVISOR" | "COORDINADOR">("OPERADOR");
+  const [role, setRole] = useState<Role>("OPERADOR");
   const logoSrc = "/arbiol-logo.png";
 
   const [route, setRoute] = useState<"ops" | "analytics" | "evidence" | "admin">("ops");
@@ -1407,9 +1417,34 @@ if (!isAuthed) {
   );
 }
 
+if (!isAuthed) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <LoginCard
+        defaultName={operatorName}
+        defaultRole={role}
+        onLogin={(name, r) => {
+          setOperatorName(name);
+          setRole(r);
+          setIsAuthed(true);
+        }}
+      />
+    </div>
+  );
+}
+
   return (
     <div className="min-h-screen flex">
-      <Sidebar active={route} onNavigate={(k) => setRoute(k as any)} />
+      <Sidebar
+        active={route}
+        onNavigate={(k) => setRoute(k as any)}
+        operatorName={operatorName}
+        role={role}
+        onLogout={() => {
+          setIsAuthed(false);
+          setRoute("ops");
+        }}
+      />
       <div className="flex-1 flex flex-col">
         <Topbar
           title={title}
@@ -1438,7 +1473,18 @@ if (!isAuthed) {
         )}
         {route === "analytics" && <AnalyticsScreen incidents={incidents} />}
         {route === "evidence" && <EvidenceScreen evidences={evidences} incidents={incidents} />}
-        {route === "admin" && <AdminScreen />}
+        {route === "admin" && (role === "COORDINADOR" || role === "ADMIN_TI" ? <AdminScreen /> : (
+  <div className="p-6">
+    <Card>
+      <CardHeader>
+        <CardTitle>Acceso restringido</CardTitle>
+      </CardHeader>
+      <CardContent className="text-sm text-muted-foreground">
+        Esta sección requiere rol <b>COORDINADOR</b> o <b>ADMIN_TI</b>.
+      </CardContent>
+    </Card>
+  </div>
+))}
       </div>
     </div>
   );
