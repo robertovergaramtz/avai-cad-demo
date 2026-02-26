@@ -421,84 +421,9 @@ function DispatchPanel({
 
 
 
-function MapMock({ incident, units }: { incident?: Incident; units: Unit[] }) {
-  // Coordenadas demo normalizadas 0..100 (para pintar en un contenedor)
-  const incidentPt = useMemo(() => {
-    if (!incident) return { x: 55, y: 45 };
-    const seed = incident.id.length * 17 + incident.sector.length * 13;
-    return { x: 30 + (seed % 50), y: 25 + ((seed * 3) % 50) };
-  }, [incident]);
 
-  const unitPts = useMemo(() => {
-    return units.map((u, idx) => {
-      const seed = (u.id.length + idx) * 19 + u.sector.length * 7;
-      return {
-        id: u.id,
-        callsign: u.callsign,
-        status: u.status,
-        x: 10 + (seed % 80),
-        y: 10 + ((seed * 5) % 80),
-      };
-    });
-  }, [units]);
 
-  return (
-    <div className="rounded-2xl border bg-muted/30 p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-semibold">Mapa operativo (mock)</div>
-          <div className="text-xs text-muted-foreground">
-            Cuadrantes • Unidades • Incidente seleccionado
-          </div>
-        </div>
-        <Badge variant="secondary">Demo</Badge>
-      </div>
 
-      <div className="mt-3 relative h-[320px] rounded-2xl border bg-background overflow-hidden">
-        {/* Grid */}
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "linear-gradient(to right, rgba(148,163,184,0.18) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,0.18) 1px, transparent 1px)",
-            backgroundSize: "40px 40px",
-          }}
-        />
-
-        {/* Incident marker */}
-        <div
-          className="absolute"
-          style={{ left: `${incidentPt.x}%`, top: `${incidentPt.y}%`, transform: "translate(-50%, -50%)" }}
-          title={incident ? `${incident.folio} • ${incident.title}` : "Incidente"}
-        >
-          <div className="h-4 w-4 rounded-full bg-red-600 ring-4 ring-red-600/20" />
-        </div>
-
-        {/* Units */}
-        {unitPts.map((p) => (
-          <div
-            key={p.id}
-            className="absolute"
-            style={{ left: `${p.x}%`, top: `${p.y}%`, transform: "translate(-50%, -50%)" }}
-            title={`${p.callsign} • ${p.status}`}
-          >
-            <div className="h-3.5 w-3.5 rounded-full bg-blue-600 ring-4 ring-blue-600/15" />
-          </div>
-        ))}
-
-        {/* Legend */}
-        <div className="absolute left-3 bottom-3 rounded-xl border bg-background/90 backdrop-blur px-3 py-2 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" /> Incidente
-          </div>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-blue-600" /> Unidades
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 
 
