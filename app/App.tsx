@@ -204,6 +204,128 @@ function DispatchPanel({
     return base + jitter;
   };
 
+  const exportSelectedCSV = () => {
+    if (!selected) return;
+    const rows: string[][] = [];
+    rows.push(["Folio", selected.folio]);
+    rows.push(["Título", selected.title]);
+    rows.push(["Tipo", selected.type]);
+    rows.push(["Severidad", selected.severity]);
+    rows.push(["Estado", selected.status]);
+    rows.push(["Sector", selected.sector]);
+    rows.push(["Ubicación", selected.location]);
+    rows.push(["Creado", fmtTime(selected.createdAt)]);
+    rows.push(["SLA (min)", String(selected.slaMin)]);
+    rows.push(["Unidad asignada", selected.assignedUnitId ?? ""]);
+    rows.push(["Descripción", selected.description ?? ""]);
+    rows.push([]);
+    rows.push(["EVIDENCIAS"]);
+    rows.push(["Nombre", "Tipo", "Hash", "Fecha"]);
+    for (const e of incidentEvidences.slice().sort((a, b) => a.createdAt - b.createdAt)) {
+      rows.push([e.name, e.type, e.hash, fmtTime(e.createdAt)]);
+    }
+    rows.push([]);
+    rows.push(["BITÁCORA"]);
+    rows.push(["Fecha", "Actor", "Acción", "Detalle"]);
+    for (const ev of (timeline[selected.id] ?? []).slice().sort((a, b) => a.ts - b.ts)) {
+      rows.push([fmtTime(ev.ts), ev.actor, ev.action, ev.detail ?? ""]);
+    }
+
+    const csv = rows
+      .map((r) =>
+        r
+          .map((c) => {
+            const v = (c ?? "").toString().replace(/"/g, '""');
+            return `"${v}"`;
+          })
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selected.folio}_incidente.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    onAuditEvent(selected.id, "Exportación CSV", "Se exportó CSV del incidente.");
+  };
+
+  const printSelectedPDF = () => {
+    if (!selected) return;
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const evs = incidentEvidences.slice().sort((a, b) => a.createdAt - b.createdAt);
+    const bits = (timeline[selected.id] ?? []).slice().sort((a, b) => a.ts - b.ts);
+
+    w.document.write(`
+      <html>
+      <head>
+        <title>${selected.folio} - AVAI-CAD</title>
+        <meta charset="utf-8"/>
+        <style>
+          body{ font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial; padding:24px; }
+          h1{ font-size:18px; margin:0 0 8px 0; }
+          .muted{ color:#666; font-size:12px; }
+          .box{ border:1px solid #ddd; border-radius:12px; padding:12px; margin:12px 0; }
+          table{ width:100%; border-collapse:collapse; }
+          th,td{ border-bottom:1px solid #eee; padding:8px; font-size:12px; text-align:left; vertical-align:top; }
+          th{ background:#fafafa; }
+          .tag{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid #ddd; }
+        </style>
+      </head>
+      <body>
+        <h1>Incidente ${selected.folio}</h1>
+        <div class="muted">AVAI-CAD | Arbiol Visión AI • Generado: ${new Date().toLocaleString("es-MX")}</div>
+
+        <div class="box">
+          <div><b>Título:</b> ${selected.title}</div>
+          <div><b>Tipo:</b> ${selected.type} • <b>Severidad:</b> <span class="tag">${selected.severity}</span> • <b>Estado:</b> <span class="tag">${selected.status}</span></div>
+          <div><b>Sector:</b> ${selected.sector}</div>
+          <div><b>Ubicación:</b> ${selected.location}</div>
+          <div><b>Creado:</b> ${new Date(selected.createdAt).toLocaleString("es-MX")} • <b>SLA:</b> ${selected.slaMin} min</div>
+          <div><b>Unidad:</b> ${selected.assignedUnitId ?? ""}</div>
+          <div><b>Descripción:</b> ${selected.description ?? ""}</div>
+        </div>
+
+        <div class="box">
+          <h1>Evidencias</h1>
+          <table>
+            <thead><tr><th>Nombre</th><th>Tipo</th><th>Hash</th><th>Fecha</th></tr></thead>
+            <tbody>
+              ${evs.map(e => `<tr><td>${e.name}</td><td>${e.type}</td><td>${e.hash}</td><td>${new Date(e.createdAt).toLocaleString("es-MX")}</td></tr>`).join("")}
+              ${evs.length === 0 ? `<tr><td colspan="4" class="muted">Sin evidencias</td></tr>` : ""}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="box">
+          <h1>Bitácora / Auditoría</h1>
+          <table>
+            <thead><tr><th>Fecha</th><th>Actor</th><th>Acción</th><th>Detalle</th></tr></thead>
+            <tbody>
+              ${bits.map(ev => `<tr><td>${new Date(ev.ts).toLocaleString("es-MX")}</td><td>${ev.actor}</td><td>${ev.action}</td><td>${ev.detail ?? ""}</td></tr>`).join("")}
+              ${bits.length === 0 ? `<tr><td colspan="4" class="muted">Sin eventos</td></tr>` : ""}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="muted">Nota: En despliegue productivo, la custodia se soporta con hash criptográfico, sellado y almacenamiento seguro.</div>
+      </body>
+      </html>
+    `);
+    w.document.close();
+    w.focus();
+    w.print();
+    w.close();
+
+    onAuditEvent(selected.id, "Impresión / PDF", "Se generó impresión del incidente.");
+  };
+
   return (
     <div className="space-y-3">
       <div className="rounded-2xl border p-4">
@@ -601,6 +723,149 @@ function Topbar({ title, right }: { title: string; right?: React.ReactNode }) {
   );
 }
 
+function MapMock({
+  selectedIncident,
+  units,
+}: {
+  selectedIncident?: Incident;
+  units: Unit[];
+}) {
+  // Grid simple 12x8 con posiciones simuladas para unidades.
+  const [pos, setPos] = useState<Record<string, { x: number; y: number }>>(() => {
+    const p: Record<string, { x: number; y: number }> = {};
+    for (const u of units) {
+      // Semilla determinística por id
+      const seed = Array.from(u.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      p[u.id] = { x: (seed % 12) + 1, y: (Math.floor(seed / 7) % 8) + 1 };
+    }
+    return p;
+  });
+  const [selUnit, setSelUnit] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setPos((prev) => {
+        const next = { ...prev };
+        for (const u of units) {
+          if (u.status === "NO_DISPONIBLE") continue;
+          const cur = next[u.id] ?? { x: 6, y: 4 };
+          // Movimiento pequeño (jitter)
+          const dx = Math.random() < 0.5 ? -1 : 1;
+          const dy = Math.random() < 0.5 ? -1 : 1;
+          next[u.id] = {
+            x: Math.min(12, Math.max(1, cur.x + dx)),
+            y: Math.min(8, Math.max(1, cur.y + dy)),
+          };
+        }
+        return next;
+      });
+    }, 1800);
+    return () => clearInterval(t);
+  }, [units]);
+
+  // Punto de incidente por sector (heurística demo)
+  const incidentPoint = useMemo(() => {
+    if (!selectedIncident) return { x: 6, y: 4 };
+    const map: Record<string, { x: number; y: number }> = {
+      Centro: { x: 6, y: 4 },
+      Norte: { x: 6, y: 2 },
+      Sur: { x: 6, y: 7 },
+      Oriente: { x: 10, y: 5 },
+      Poniente: { x: 2, y: 5 },
+    };
+    return map[selectedIncident.sector] ?? { x: 6, y: 4 };
+  }, [selectedIncident]);
+
+  const unitById = useMemo(() => Object.fromEntries(units.map((u) => [u.id, u])), [units]);
+  const selectedUnit = selUnit ? unitById[selUnit] : undefined;
+
+  return (
+    <div className="rounded-2xl border bg-muted/20 p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold">Mapa operativo (mock)</div>
+          <div className="text-xs text-muted-foreground">
+            Cuadrantes + unidades simuladas. Click en una unidad para ver detalle.
+          </div>
+        </div>
+        <Badge variant="secondary">Demo</Badge>
+      </div>
+
+      <div className="rounded-2xl border bg-background p-3">
+        <div className="grid grid-cols-12 gap-1">
+          {Array.from({ length: 12 * 8 }).map((_, i) => (
+            <div key={i} className="h-6 rounded-md bg-muted/40" />
+          ))}
+        </div>
+
+        {/* Marcador de incidente */}
+        <div
+          className="absolute pointer-events-none"
+          style={{
+            transform: `translate(${(incidentPoint.x - 1) * 28}px, ${(incidentPoint.y - 1) * 28}px)`,
+          }}
+        />
+
+        <div className="relative -mt-[192px] h-[192px]">
+          <div
+            className="absolute h-4 w-4 rounded-full bg-red-600 ring-4 ring-red-600/20"
+            style={{
+              left: (incidentPoint.x - 1) * 28 + 8,
+              top: (incidentPoint.y - 1) * 28 + 8,
+            }}
+            title={selectedIncident ? `${selectedIncident.folio}` : "Incidente"}
+          />
+
+          {units.map((u) => {
+            const p = pos[u.id] ?? { x: 6, y: 4 };
+            const isSel = selUnit === u.id;
+            return (
+              <button
+                key={u.id}
+                onClick={() => setSelUnit(u.id)}
+                className={
+                  "absolute h-4 w-4 rounded-full ring-4 transition " +
+                  (u.status === "DISPONIBLE"
+                    ? "bg-blue-600 ring-blue-600/20"
+                    : u.status === "ASIGNADA"
+                    ? "bg-slate-700 ring-slate-700/20"
+                    : "bg-slate-500 ring-slate-500/20") +
+                  (isSel ? " scale-110" : "")
+                }
+                style={{
+                  left: (p.x - 1) * 28 + 8,
+                  top: (p.y - 1) * 28 + 8,
+                }}
+                title={`${u.callsign} • ${u.status}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="rounded-xl bg-background p-3 border">
+          <div className="text-muted-foreground">Incidente seleccionado</div>
+          <div className="mt-1 font-semibold">{selectedIncident ? selectedIncident.folio : "—"}</div>
+        </div>
+        <div className="rounded-xl bg-background p-3 border">
+          <div className="text-muted-foreground">Unidad seleccionada</div>
+          <div className="mt-1 font-semibold">{selectedUnit ? selectedUnit.callsign : "—"}</div>
+        </div>
+      </div>
+
+      {selectedUnit && (
+        <div className="rounded-2xl border bg-background p-3">
+          <div className="text-sm font-semibold">{selectedUnit.callsign}</div>
+          <div className="text-xs text-muted-foreground">{selectedUnit.agency} • {selectedUnit.sector}</div>
+          <div className="text-xs text-muted-foreground mt-1">Estado: {selectedUnit.status}</div>
+          <div className="text-xs text-muted-foreground">Último: {selectedUnit.lastKnown}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ------------------------- Pantalla Operación -------------------------
 function OpsScreen({
   incidents,
@@ -616,6 +881,7 @@ function OpsScreen({
   onIncidentStatus,
   onUnitStatus,
   onAddEvidence,
+  onAuditEvent,
 }: {
   incidents: Incident[];
   units: Unit[];
@@ -630,6 +896,7 @@ function OpsScreen({
   onIncidentStatus: (incidentId: string, status: IncidentStatus, actor?: string) => void;
   onUnitStatus: (unitId: string, status: UnitStatus) => void;
   onAddEvidence: (incidentId: string, name: string, type: Evidence["type"]) => void;
+  onAuditEvent: (incidentId: string, action: string, detail?: string) => void;
 }) {
   const selected = incidents.find((i) => i.id === selectedId) ?? incidents[0];
 
@@ -653,7 +920,46 @@ function OpsScreen({
   const unitOptions = units.filter((u) => u.status === "DISPONIBLE" || u.status === "NO_DISPONIBLE");
   const incidentEvidences = evidences.filter((e) => e.incidentId === selected?.id);
 
-  const closeCheck = selected ? canCloseIncident(selected, role, evidences) : { ok: false, reason: "Sin incidente seleccionado." };
+// -------- Cierre: reglas + RBAC (MVP) --------
+const canClose = useMemo(() => {
+  if (!selected) return { ok: false, reason: "Sin incidente seleccionado.", allowOverride: false };
+  if (selected.status === "CERRADO") return { ok: false, reason: "El incidente ya está cerrado.", allowOverride: false };
+
+  const hasEvidence = incidentEvidences.length > 0;
+
+  // Regla: CRÍTICO requiere evidencia
+  if (selected.severity === "CRITICO" && !hasEvidence) {
+    // Coordinador puede hacer override (con motivo)
+    if (role === "COORDINADOR") return { ok: false, reason: "Incidente CRÍTICO sin evidencia. Requiere evidencia para cerrar (o override de Coordinación).", allowOverride: true };
+    return { ok: false, reason: "Incidente CRÍTICO requiere evidencia para cerrar.", allowOverride: false };
+  }
+
+  // Regla: Operador no cierra CRÍTICOS (aunque haya evidencia)
+  if (role === "OPERADOR" && selected.severity === "CRITICO") {
+    return { ok: false, reason: "Operador no puede cerrar incidentes CRÍTICOS. Requiere Supervisor/Coordinación.", allowOverride: false };
+  }
+
+  return { ok: true, reason: "", allowOverride: false };
+}, [selected, incidentEvidences.length, role]);
+
+const [overrideOpen, setOverrideOpen] = useState(false);
+const [overrideReason, setOverrideReason] = useState("");
+
+const attemptClose = () => {
+  if (!selected) return;
+
+  if (canClose.ok) {
+    onIncidentStatus(selected.id, "CERRADO", operatorName);
+    return;
+  }
+
+  // Log de bloqueo
+  onAuditEvent(selected.id, "Cierre bloqueado", canClose.reason);
+
+  if (role === "COORDINADOR" && canClose.allowOverride) {
+    setOverrideOpen(true);
+  }
+};
 
   return (
     <div className="p-6 grid grid-cols-12 gap-4">
@@ -756,23 +1062,13 @@ function OpsScreen({
     </TabsList>
 
     <TabsContent value="map" className="space-y-3">
+{/* MAPA (mock interactivo) */}
+<MapMock
+  selectedIncident={selected}
+  units={units}
+/>
 
-      {/* MAPA */}
-      <div className="rounded-2xl border bg-muted/40 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm font-semibold">
-              {selected?.sector} — {selected?.location}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              (Mock) Aquí irá mapa real con AVL + cuadrantes.
-            </div>
-          </div>
-          <Badge variant="secondary">Demo</Badge>
-        </div>
-      </div>
-
-      {/* Acciones rápidas */}
+{/* Acciones rápidas */}
       <div className="rounded-2xl border p-4 space-y-3">
         <div className="text-sm font-semibold">Acciones rápidas</div>
 
@@ -799,11 +1095,61 @@ function OpsScreen({
           </Button>
 
           <Button
-            onClick={() => selected && onIncidentStatus(selected.id, "CERRADO", "Supervisor")}
+            onClick={attemptClose}
+            disabled={!selected || (!canClose.ok && !(role === "COORDINADOR" && canClose.allowOverride))}
           >
             Cerrar
           </Button>
         </div>
+
+        {!canClose.ok && selected && (
+          <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="font-semibold">No es posible cerrar este incidente</div>
+            <div className="text-xs mt-1">{canClose.reason}</div>
+            {role === "COORDINADOR" && canClose.allowOverride && (
+              <div className="text-xs mt-2">Puedes aplicar un <b>override</b> con motivo obligatorio.</div>
+            )}
+          </div>
+        )}
+
+        <Dialog open={overrideOpen} onOpenChange={setOverrideOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Override de cierre (Coordinación)</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Este incidente está en condición de <b>cierre restringido</b>. Si decides continuar, se registrará en auditoría.
+              </div>
+              <div>
+                <Label className="text-xs">Motivo del override (obligatorio)</Label>
+                <Textarea
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                  placeholder="Ej. Se recibe autorización por radio, evidencia se anexará posteriormente, emergencia controlada..."
+                />
+                <div className="text-[11px] text-muted-foreground mt-1">Mínimo 10 caracteres.</div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => { setOverrideOpen(false); setOverrideReason(""); }}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={overrideReason.trim().length < 10 || !selected}
+                onClick={() => {
+                  if (!selected) return;
+                  onAuditEvent(selected.id, "Override de cierre", overrideReason.trim());
+                  onIncidentStatus(selected.id, "CERRADO", operatorName + " (COORDINADOR)");
+                  setOverrideOpen(false);
+                  setOverrideReason("");
+                }}
+              >
+                Confirmar override y cerrar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
     </TabsContent>
@@ -854,9 +1200,15 @@ function OpsScreen({
       {/* Right: Detail + Units + Timeline */}
       <Card className="col-span-12 xl:col-span-3">
         <CardHeader className="space-y-2">
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-5 w-5" /> Detalle
-          </CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-5 w-5" /> Detalle
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="secondary" onClick={exportSelectedCSV} disabled={!selected}>Exportar CSV</Button>
+              <Button size="sm" variant="secondary" onClick={printSelectedPDF} disabled={!selected}>PDF</Button>
+            </div>
+          </div>
           {selected && (
             <div className="text-xs text-muted-foreground">
               {selected.folio} • {fmtTime(selected.createdAt)} • SLA {selected.slaMin}m
@@ -1527,6 +1879,11 @@ export default function App() {
     pushEvent(incidentId, operatorName, "Evidencia anexada", `${type}: ${name} | Hash ${ev.hash.slice(0, 12)}…`);
   };
 
+const onAuditEvent = (incidentId: string, action: string, detail?: string) => {
+  pushEvent(incidentId, `${operatorName} (${role})`, action, detail);
+};
+
+
   const title = route === "ops" ? "Operación" : route === "analytics" ? "Analítica" : route === "evidence" ? "Evidencias" : "Administración";
 
 if (!isAuthed) {
@@ -1600,6 +1957,7 @@ if (!isAuthed) {
             onIncidentStatus={onIncidentStatus}
             onUnitStatus={onUnitStatus}
             onAddEvidence={onAddEvidence}
+            onAuditEvent={onAuditEvent}
           />
         )}
         {route === "analytics" && <AnalyticsScreen incidents={incidents} />}
