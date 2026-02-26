@@ -171,6 +171,7 @@ function DispatchPanel(props: {
   onSelect: (id: string) => void;
   onAssign: (incidentId: string, unitId: string) => void;
   onUnitStatus: (unitId: string, status: UnitStatus) => void;
+  onAuditEvent?: (incidentId: string, action: string, detail?: string) => void;
 }) {
   const { incidents, units, selectedId, onSelect, onAssign, onUnitStatus } = props;
   const evidences: Evidence[] = props.evidences ?? [];
@@ -252,7 +253,7 @@ function DispatchPanel(props: {
     a.remove();
     URL.revokeObjectURL(url);
 
-    onAuditEvent(selected.id, "Exportación CSV", "Se exportó CSV del incidente.");
+    (props.onAuditEvent ?? (() => {}))(selected.id, "Exportación CSV", "Se exportó CSV del incidente.");
   };
 
   const printSelectedPDF = () => {
@@ -324,7 +325,7 @@ function DispatchPanel(props: {
     w.print();
     w.close();
 
-    onAuditEvent(selected.id, "Impresión / PDF", "Se generó impresión del incidente.");
+    (props.onAuditEvent ?? (() => {}))(selected.id, "Impresión / PDF", "Se generó impresión del incidente.");
   };
 
   return (
