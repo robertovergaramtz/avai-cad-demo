@@ -206,7 +206,7 @@ function DispatchPanel(props: {
   const exportSelectedCSV = () => {
     if (!selected) return;
     const rows: string[][] = [];
-    const incidentEvidences = (props.evidences ?? []).filter((e) => e.incidentId === selected.id);
+    const incidentEvidences = evidences.filter((e) => e.incidentId === selected.id);
     rows.push(["Folio", selected.folio]);
     rows.push(["Título", selected.title]);
     rows.push(["Tipo", selected.type]);
@@ -257,7 +257,7 @@ function DispatchPanel(props: {
 
   const printSelectedPDF = () => {
     if (!selected) return;
-    const incidentEvidences = (props.evidences ?? []).filter((e) => e.incidentId === selected.id);
+    const incidentEvidences = evidences.filter((e) => e.incidentId === selected.id);
     const w = window.open("", "_blank");
     if (!w) return;
     const evs = incidentEvidences.slice().sort((a, b) => a.createdAt - b.createdAt);
