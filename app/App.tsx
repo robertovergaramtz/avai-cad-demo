@@ -1356,36 +1356,7 @@ const attemptClose = () => {
 
 
 
-{/* Evidencia (demo) */}
-<div className="rounded-2xl border p-4">
-  <div className="flex items-center justify-between">
-    <div className="text-sm font-semibold">Evidencia (demo)</div>
-    <AddEvidenceDialog
-      onAdd={(name, type) => selected && onAddEvidence(selected.id, name, type)}
-      disabled={!selected || selected.status === "CERRADO"}
-    />
-  </div>
 
-  <div className="mt-3 space-y-2">
-    {(evidences ?? [])
-      .filter((e) => e.incidentId === selected?.id)
-      .map((e) => (
-        <div key={e.id} className="flex items-center justify-between rounded-xl border p-3">
-          <div>
-            <div className="text-sm font-medium">{e.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {e.type} • Hash {e.hash.slice(0, 12)}… • {fmtTime(e.createdAt)}
-            </div>
-          </div>
-          <Badge variant="secondary">Custodia</Badge>
-        </div>
-      ))}
-
-    {(evidences ?? []).filter((e) => e.incidentId === selected?.id).length === 0 && (
-      <div className="text-sm text-muted-foreground">Sin evidencias anexadas.</div>
-    )}
-  </div>
-</div>
 
 
 
@@ -1429,6 +1400,38 @@ const attemptClose = () => {
 
     </TabsContent>
   </Tabs>
+
+  {/* Evidencia (demo) */}
+  <div className="rounded-2xl border p-4">
+    <div className="flex items-center justify-between">
+      <div className="text-sm font-semibold">Evidencia (demo)</div>
+      <AddEvidenceDialog
+        onAdd={(name, type) => selected && onAddEvidence(selected.id, name, type)}
+        disabled={!selected || selected.status === "CERRADO"}
+      />
+    </div>
+
+    <div className="mt-3 space-y-2">
+      {(evidences ?? [])
+        .filter((e) => e.incidentId === selected?.id)
+        .map((e) => (
+          <div key={e.id} className="flex items-center justify-between rounded-xl border p-3">
+            <div>
+              <div className="text-sm font-medium">{e.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {e.type} • Hash {e.hash.slice(0, 12)}… • {fmtTime(e.createdAt)}
+              </div>
+            </div>
+            <Badge variant="secondary">Custodia</Badge>
+          </div>
+        ))}
+
+      {(evidences ?? []).filter((e) => e.incidentId === selected?.id).length === 0 && (
+        <div className="text-sm text-muted-foreground">Sin evidencias anexadas.</div>
+      )}
+    </div>
+  </div>
+
 </CardContent>
 
 
@@ -1512,6 +1515,24 @@ const attemptClose = () => {
 
 
               <div className="space-y-2">
+
+              <Separator />
+
+              {/* Sugerencias IA (demo) — requiere confirmación del operador */}
+              <IASuggestionsPanel
+                incident={selected}
+                units={units}
+                timeline={timeline[selected.id] ?? []}
+                evidences={(evidences ?? []).filter((e) => e.incidentId === selected.id)}
+                onConfirm={(label, apply) => {
+                  // Confirmación manual: aplicar acción y auditar
+                  apply();
+                  onAuditEvent(selected.id, "Sugerencia IA confirmada", label);
+                }}
+                onAssign={(unitId) => onAssign(selected.id, unitId)}
+                onClassify={() => onIncidentStatus(selected.id, "CLASIFICADO", operatorName)}
+              />
+
                 <div className="text-sm font-semibold">Timeline / Auditoría</div>
                 <div className="space-y-2">
                   {(timeline[selected.id] ?? []).slice().sort((a, b) => b.ts - a.ts).map((ev) => (
