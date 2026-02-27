@@ -847,7 +847,142 @@ function OpsScreen({
   const unitOptions = units.filter((u) => u.status === "DISPONIBLE" || u.status === "NO_DISPONIBLE");
   const incidentEvidences = evidences.filter((e) => e.incidentId === selected?.id);
 
-// -------- Cierre: reglas + RBAC (MVP) --------
+/
+  // -------- Exportaciones (Detalle) --------
+  const exportSelectedCSV = () => {
+    if (!selected) return;
+
+    const incEvidences = evidences.filter((e) => e.incidentId === selected.id);
+    const tline = (timeline[selected.id] ?? []).slice().sort((a, b) => a.ts - b.ts);
+
+    const rows: string[][] = [];
+    rows.push(["Folio", selected.folio]);
+    rows.push(["Título", selected.title]);
+    rows.push(["Tipo", selected.type]);
+    rows.push(["Severidad", selected.severity]);
+    rows.push(["Estado", selected.status]);
+    rows.push(["Sector", selected.sector]);
+    rows.push(["Ubicación", selected.location]);
+    rows.push(["Creado", fmtTime(selected.createdAt)]);
+    rows.push(["SLA (min)", String(selected.slaMin)]);
+    rows.push(["Unidad asignada", selected.assignedUnitId ?? ""]);
+    rows.push(["Descripción", selected.description ?? ""]);
+    rows.push([]);
+    rows.push(["EVIDENCIAS"]);
+    rows.push(["Nombre", "Tipo", "Hash", "Fecha"]);
+    for (const e of incEvidences.slice().sort((a, b) => b.createdAt - a.createdAt)) {
+      rows.push([e.name, e.type, e.hash, fmtTime(e.createdAt)]);
+    }
+    rows.push([]);
+    rows.push(["BITÁCORA"]);
+    rows.push(["Fecha", "Actor", "Acción", "Detalle"]);
+    for (const ev of tline) {
+      rows.push([fmtTime(ev.ts), ev.actor, ev.action, ev.detail ?? ""]);
+    }
+
+    const csv = rows
+      .map((r) => r.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${selected.folio}_incidente.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    onAuditEvent(selected.id, "Exportación CSV", "Se exportó CSV del incidente.");
+  };
+
+  const printSelectedPDF = () => {
+    if (!selected) return;
+
+    const esc = (s: string) =>
+      s
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+
+    const incEvidences = evidences.filter((e) => e.incidentId === selected.id).slice().sort((a, b) => b.createdAt - a.createdAt);
+    const tline = (timeline[selected.id] ?? []).slice().sort((a, b) => a.ts - b.ts);
+
+    const createdStr = fmtTime(selected.createdAt);
+
+    const evidRows = incEvidences.length
+      ? incEvidences.map((e) => `<tr><td>${esc(e.name)}</td><td>${esc(e.type)}</td><td>${esc(e.hash)}</td><td>${esc(fmtTime(e.createdAt))}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="muted">Sin evidencias</td></tr>`;
+
+    const tlRows = tline.length
+      ? tline.map((ev) => `<tr><td>${esc(fmtTime(ev.ts))}</td><td>${esc(ev.actor)}</td><td>${esc(ev.action)}</td><td>${esc(ev.detail ?? "")}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="muted">Sin eventos</td></tr>`;
+
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>${esc(selected.folio)} - AVAI-CAD</title>
+<style>
+  body{font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; margin:24px;}
+  h1{font-size:18px;margin:0 0 8px;}
+  h2{font-size:14px;margin:18px 0 8px;}
+  .muted{color:#555;font-size:12px;}
+  table{width:100%;border-collapse:collapse;margin-top:8px;}
+  th,td{border:1px solid #ddd;padding:8px;font-size:12px;vertical-align:top;}
+  th{background:#f5f5f5;text-align:left;}
+  .grid{display:grid;grid-template-columns: 1fr 1fr; gap:12px;}
+  .box{border:1px solid #ddd;border-radius:12px;padding:12px;}
+</style>
+</head>
+<body>
+  <div class="muted">Arbiol Visión AI • AVAI-CAD • Reporte de incidente</div>
+  <h1>${esc(selected.folio)} — ${esc(selected.title)}</h1>
+
+  <div class="grid">
+    <div class="box">
+      <div><b>Tipo:</b> ${esc(selected.type)}</div>
+      <div><b>Severidad:</b> ${esc(selected.severity)}</div>
+      <div><b>Estado:</b> ${esc(selected.status)}</div>
+      <div><b>Sector:</b> ${esc(selected.sector)}</div>
+      <div><b>Ubicación:</b> ${esc(selected.location)}</div>
+    </div>
+    <div class="box">
+      <div><b>Creado:</b> ${esc(createdStr)}</div>
+      <div><b>SLA:</b> ${esc(String(selected.slaMin))} min</div>
+      <div><b>Unidad:</b> ${esc(selected.assignedUnitId ?? "")}</div>
+      <div><b>Descripción:</b> ${esc(selected.description ?? "")}</div>
+    </div>
+  </div>
+
+  <h2>Evidencias</h2>
+  <table>
+    <thead><tr><th>Nombre</th><th>Tipo</th><th>Hash</th><th>Fecha</th></tr></thead>
+    <tbody>${evidRows}</tbody>
+  </table>
+
+  <h2>Bitácora</h2>
+  <table>
+    <thead><tr><th>Fecha</th><th>Actor</th><th>Acción</th><th>Detalle</th></tr></thead>
+    <tbody>${tlRows}</tbody>
+  </table>
+
+  <script>
+    window.onload = () => { window.print(); };
+  </script>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+
+    onAuditEvent(selected.id, "Exportación PDF", "Se generó impresión/guardado a PDF.");
+  };
+/ -------- Cierre: reglas + RBAC (MVP) --------
 const canClose = useMemo(() => {
   if (!selected) return { ok: false, reason: "Sin incidente seleccionado.", allowOverride: false };
   if (selected.status === "CERRADO") return { ok: false, reason: "El incidente ya está cerrado.", allowOverride: false };
