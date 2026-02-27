@@ -161,6 +161,145 @@ function LoginCard({
   );
 }
 
+function IASuggestionsPanel({
+  incident,
+  units,
+  timeline,
+  evidences,
+  onConfirm,
+  onAssign,
+  onClassify,
+}: {
+  incident: Incident;
+  units: Unit[];
+  timeline: TimelineEvent[];
+  evidences: Evidence[];
+  onConfirm: (label: string, apply: () => void) => void;
+  onAssign: (unitId: string) => void;
+  onClassify: () => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [pendingLabel, setPendingLabel] = React.useState<string>("");
+  const [pendingApply, setPendingApply] = React.useState<null | (() => void)>(null);
+
+  // Señales “simuladas” desde timeline (AVAI-VISION)
+  const signals = React.useMemo(() => {
+    return timeline
+      .filter((t) => (t.actor ?? "").toUpperCase().includes("AVAI"))
+      .map((t) => t.detail || t.action)
+      .filter(Boolean)
+      .slice(0, 5) as string[];
+  }, [timeline]);
+
+  // Sugerencia de unidad: misma zona + disponible
+  const suggestedUnit = React.useMemo(() => {
+    const same = units.find((u) => u.sector === incident.sector && u.status === "DISPONIBLE");
+    if (same) return same;
+    return units.find((u) => u.status === "DISPONIBLE");
+  }, [units, incident.sector]);
+
+  const recs = React.useMemo(() => {
+    const out: { title: string; desc: string; cta?: { label: string; apply: () => void } }[] = [];
+
+    // 1) Clasificación sugerida
+    if (incident.status === "NUEVO") {
+      out.push({
+        title: "Clasificar incidente",
+        desc: "Sugerencia IA: confirmar tipo/severidad y mover a CLASIFICADO para despacho.",
+        cta: { label: "Aplicar: Clasificar", apply: onClassify },
+      });
+    }
+
+    // 2) Unidad sugerida
+    if (!incident.assignedUnitId && suggestedUnit) {
+      out.push({
+        title: "Unidad sugerida",
+        desc: `Sugerencia IA: asignar ${suggestedUnit.callsign} (${suggestedUnit.agency}) por proximidad/sector.`,
+        cta: { label: `Aplicar: Asignar ${suggestedUnit.callsign}`, apply: () => onAssign(suggestedUnit.id) },
+      });
+    }
+
+    // 3) Evidencia recomendada (por señales)
+    if (incident.severity === "CRITICO" && evidences.length === 0) {
+      out.push({
+        title: "Evidencia recomendada",
+        desc: "Sugerencia IA: anexar evidencia mínima (foto/video) antes de cierre o escalamiento.",
+      });
+    }
+
+    // 4) Señales de video (B)
+    if (signals.length > 0) {
+      out.push({
+        title: "Señales AVAI-VISION",
+        desc: signals.join(" • "),
+      });
+    } else {
+      out.push({
+        title: "Señales AVAI-VISION",
+        desc: "Sin señales de video asociadas (demo).",
+      });
+    }
+
+    return out;
+  }, [incident, suggestedUnit, evidences.length, signals, onAssign, onClassify]);
+
+  const requestConfirm = (label: string, apply: () => void) => {
+    setPendingLabel(label);
+    setPendingApply(() => apply);
+    setOpen(true);
+  };
+
+  return (
+    <div className="rounded-2xl border p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-semibold">Sugerencias IA (demo)</div>
+        <Badge variant="secondary">Recomendación</Badge>
+      </div>
+
+      <div className="space-y-2">
+        {recs.map((r, idx) => (
+          <div key={idx} className="rounded-xl border p-3">
+            <div className="text-sm font-medium">{r.title}</div>
+            <div className="text-xs text-muted-foreground mt-1">{r.desc}</div>
+            {r.cta && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-2"
+                onClick={() => requestConfirm(r.cta!.label, r.cta!.apply)}
+              >
+                {r.cta.label}
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirmar acción sugerida</DialogTitle>
+          </DialogHeader>
+          <div className="text-sm text-muted-foreground">
+            ¿Deseas aplicar esta sugerencia?
+            <div className="mt-2 font-medium text-foreground">{pendingLabel}</div>
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => {
+                if (pendingApply) onConfirm(pendingLabel, pendingApply);
+                setOpen(false);
+              }}
+            >
+              Confirmar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 function DispatchPanel(props: {
   incidents: Incident[];
@@ -982,6 +1121,7 @@ function OpsScreen({
 
     onAuditEvent(selected.id, "Exportación PDF", "Se generó impresión/guardado a PDF.");
   };
+
 // -------- Cierre: reglas + RBAC (MVP) --------
 const canClose = useMemo(() => {
   if (!selected) return { ok: false, reason: "Sin incidente seleccionado.", allowOverride: false };
@@ -1130,7 +1270,7 @@ const attemptClose = () => {
   units={units}
 />
 
-{/* Acciones rápidas */}
+   {/* Acciones rápidas */}
       <div className="rounded-2xl border p-4 space-y-3">
         <div className="text-sm font-semibold">Acciones rápidas</div>
 
@@ -1213,6 +1353,41 @@ const attemptClose = () => {
           </DialogContent>
         </Dialog>
       </div>
+
+
+
+{/* Evidencia (demo) */}
+<div className="rounded-2xl border p-4">
+  <div className="flex items-center justify-between">
+    <div className="text-sm font-semibold">Evidencia (demo)</div>
+    <AddEvidenceDialog
+      onAdd={(name, type) => selected && onAddEvidence(selected.id, name, type)}
+      disabled={!selected || selected.status === "CERRADO"}
+    />
+  </div>
+
+  <div className="mt-3 space-y-2">
+    {(evidences ?? [])
+      .filter((e) => e.incidentId === selected?.id)
+      .map((e) => (
+        <div key={e.id} className="flex items-center justify-between rounded-xl border p-3">
+          <div>
+            <div className="text-sm font-medium">{e.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {e.type} • Hash {e.hash.slice(0, 12)}… • {fmtTime(e.createdAt)}
+            </div>
+          </div>
+          <Badge variant="secondary">Custodia</Badge>
+        </div>
+      ))}
+
+    {(evidences ?? []).filter((e) => e.incidentId === selected?.id).length === 0 && (
+      <div className="text-sm text-muted-foreground">Sin evidencias anexadas.</div>
+    )}
+  </div>
+</div>
+
+
 
     </TabsContent>
 
@@ -1314,6 +1489,27 @@ const attemptClose = () => {
               </div>
 
               <Separator />
+
+
+{/* Sugerencias IA (demo) */}
+{selected && (
+  <IASuggestionsPanel
+    incident={selected}
+    units={units}
+    timeline={timeline[selected.id] ?? []}
+    evidences={(evidences ?? []).filter((e) => e.incidentId === selected.id)}
+    onConfirm={(actionLabel, apply) => {
+      // Confirmación manual: se ejecuta apply() SOLO si confirma
+      apply();
+      // Registrar auditoría
+      // Si ya tienes pushEvent aquí, úsalo. Si no, usa onIncidentStatus/onAssign para que ya registren.
+      // Si tienes una función de auditoría: onAuditEvent(selected.id,...)
+    }}
+    onAssign={(unitId) => onAssign(selected.id, unitId)}
+    onClassify={() => onIncidentStatus(selected.id, "CLASIFICADO", "Operador")}
+  />
+)}
+
 
               <div className="space-y-2">
                 <div className="text-sm font-semibold">Timeline / Auditoría</div>
