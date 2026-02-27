@@ -1494,26 +1494,6 @@ const attemptClose = () => {
               <Separator />
 
 
-{/* Sugerencias IA (demo) */}
-{selected && (
-  <IASuggestionsPanel
-    incident={selected}
-    units={units}
-    timeline={timeline[selected.id] ?? []}
-    evidences={(evidences ?? []).filter((e) => e.incidentId === selected.id)}
-    onConfirm={(actionLabel, apply) => {
-      // Confirmación manual: se ejecuta apply() SOLO si confirma
-      apply();
-      // Registrar auditoría
-      // Si ya tienes pushEvent aquí, úsalo. Si no, usa onIncidentStatus/onAssign para que ya registren.
-      // Si tienes una función de auditoría: onAuditEvent(selected.id,...)
-    }}
-    onAssign={(unitId) => onAssign(selected.id, unitId)}
-    onClassify={() => onIncidentStatus(selected.id, "CLASIFICADO", "Operador")}
-  />
-)}
-
-
               <div className="space-y-2">
 
               <Separator />
