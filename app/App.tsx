@@ -847,7 +847,7 @@ function OpsScreen({
   const unitOptions = units.filter((u) => u.status === "DISPONIBLE" || u.status === "NO_DISPONIBLE");
   const incidentEvidences = evidences.filter((e) => e.incidentId === selected?.id);
 
-/
+
   // -------- Exportaciones (Detalle) --------
   const exportSelectedCSV = () => {
     if (!selected) return;
@@ -982,7 +982,7 @@ function OpsScreen({
 
     onAuditEvent(selected.id, "Exportación PDF", "Se generó impresión/guardado a PDF.");
   };
-/ -------- Cierre: reglas + RBAC (MVP) --------
+// -------- Cierre: reglas + RBAC (MVP) --------
 const canClose = useMemo(() => {
   if (!selected) return { ok: false, reason: "Sin incidente seleccionado.", allowOverride: false };
   if (selected.status === "CERRADO") return { ok: false, reason: "El incidente ya está cerrado.", allowOverride: false };
